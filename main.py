@@ -1,6 +1,7 @@
 import os
 from dotenv import load_dotenv
 from transcribe_voxtral import transcribe_video
+from analyze_prompt import get_highlight_timestamps
 from video_editor import create_highlight_reel
 
 def main():
@@ -19,13 +20,27 @@ def main():
         print("No audio detected or transcription failed. Exiting.")
         return
 
-    print("=== Step 2: Selecting Highlights ===")
-    # For demonstration, we'll just take the first 3 segments.
-    # Later, you can add an LLM here to analyze the 'text' and pick the best plays!
-    highlights = transcript[:3]
+    print("\n=== Step 2: Analyzing LLM Prompt ===")
     
+    # Here are some sample prompts you can try:
+    sample_prompts = [
+        "Show me all the blocks and rejections.",
+        "Give me the best dunks and slams.",
+        "Show me the assists and nice passes."
+    ]
+    
+    # Pick a sample prompt to run (using index 1: dunks and slams by default)
+    user_prompt = sample_prompts[1]
+    print(f"User Prompt: '{user_prompt}'")
+    
+    highlights = get_highlight_timestamps(transcript, user_prompt, dry_run=False)
+    
+    if not highlights:
+        print("No matching highlights found by the LLM. Exiting.")
+        return
+        
     for idx, segment in enumerate(highlights):
-        print(f"Clip {idx + 1}: [{segment['start']}s - {segment['end']}s] -> {segment['text']}")
+        print(f"Highlight {idx + 1}: [{segment['start']}s - {segment['end']}s]")
 
     print("\n=== Step 3: Rendering Highlight Reel ===")
     base_name = os.path.basename(video_path)

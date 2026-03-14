@@ -12,6 +12,10 @@ Use Cases:
 
 import json
 from typing import Any
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 try:
     from google import genai
@@ -19,13 +23,6 @@ try:
 except ImportError:
     genai = None
     types = None
-try:
-    import config
-except ImportError:
-    class config:
-        GEMINI_API_KEY = "demo"
-        GEMINI_MODEL_NAME = "gemini-2.5-flash"
-
 
 def _normalize_transcript(transcript: list[dict[str, Any]]) -> list[dict[str, Any]]:
     normalized = []
@@ -132,18 +129,21 @@ def get_highlight_timestamps(
             "Missing google-genai package. Install with: pip install google-genai"
         )
 
-    if not getattr(config, "GEMINI_API_KEY", None):
-        raise ValueError("GEMINI_API_KEY is not set in config.py")
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise ValueError("GEMINI_API_KEY is not set in .env")
+
+    model_name = os.getenv("GEMINI_MODEL_NAME", "gemini-2.5-flash")
 
     normalized_transcript = _normalize_transcript(transcript)
     if not normalized_transcript:
         return []
 
     prompt = _build_prompt(normalized_transcript, user_prompt, stats_data)
-    client = genai.Client(api_key=config.GEMINI_API_KEY)
+    client = genai.Client(api_key=api_key)
 
     response = client.models.generate_content(
-        model=config.GEMINI_MODEL_NAME,
+        model=model_name,
         contents=prompt,
         config=types.GenerateContentConfig(
             temperature=0.2,
