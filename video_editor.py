@@ -13,13 +13,9 @@ Use Cases:
 
 import os
 import subprocess
-try:
-    import config
-    DEFAULT_VIDEO = config.DEFAULT_TEST_VIDEO_PATH
-except (ImportError, AttributeError):
-    DEFAULT_VIDEO = "sample_video.mp4"
+DEFAULT_VIDEO = "input_video/NBA_20240617_DAL_BOS_1080p60_ABC_mkv.mp4"
 
-def create_highlight_reel(input_video: str, timestamps: list, output_video: str = "highlights.mp4", dry_run: bool = False):
+def create_highlight_reel(input_video: str, timestamps: list, output_video: str = "output/highlights.mp4", dry_run: bool = False):
     """
     Clips specific segments from an input video and concatenates them into a new file.
     
@@ -52,11 +48,17 @@ def create_highlight_reel(input_video: str, timestamps: list, output_video: str 
             subprocess.run([
                 "ffmpeg", "-y", "-ss", str(start_time), "-t", str(duration), 
                 "-i", input_video, "-c", "copy", clip_name
-            ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            ])
             
-            f.write(f"file '{clip_name}'\n")
+            f.write(f"file '{os.path.abspath(clip_name).replace(chr(92), '/')}'\n")
 
     print(f"Stitching clips together into {output_video}...")
+    
+    # Ensure the output directory exists
+    output_dir = os.path.dirname(output_video)
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
+        
     subprocess.run([
         "ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", list_file, 
         "-c", "copy", output_video
@@ -75,6 +77,7 @@ if __name__ == "__main__":
     print("Testing Video Editor script...")
     mock_timestamps = [
         {"start": 10.5, "end": 15.0},
-        {"start": 45.0, "end": 52.5}
+        {"start": 45.0, "end": 52.5},
+        {"start": 120.0, "end": 130.0},
     ]
-    create_highlight_reel(DEFAULT_VIDEO, mock_timestamps, dry_run=True)
+    create_highlight_reel(DEFAULT_VIDEO, mock_timestamps, dry_run=False)
