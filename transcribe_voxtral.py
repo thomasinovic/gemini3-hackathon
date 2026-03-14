@@ -34,9 +34,12 @@ def transcribe_video(video_path: str, api_key: str = None) -> list:
     if api_key is None:
         api_key = os.getenv("MISTRAL_API_KEY")
         
-    base_name = os.path.splitext(video_path)[0]
-    json_path = f"{base_name}_transcript.json"
-    audio_path = f"{base_name}_audio.mp3"
+    assets_dir = "assets"
+    os.makedirs(assets_dir, exist_ok=True)
+    
+    base_name = os.path.splitext(os.path.basename(video_path))[0]
+    json_path = os.path.join(assets_dir, f"{base_name}_transcript.json")
+    audio_path = os.path.join(assets_dir, f"{base_name}_audio.mp3")
     
     if os.path.exists(json_path):
         print(f"Transcript already exists at {json_path}. Loading...")
