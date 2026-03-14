@@ -10,4 +10,5 @@ wheels/
 .venv
 input_video/*
 output/*
+assets/*
 .env

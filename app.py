@@ -5,14 +5,10 @@ from transcribe_voxtral import transcribe_video
 from analyze_prompt import get_highlight_timestamps
 from video_editor import create_highlight_reel
 
-def generate_highlights(video, prompt):
+def generate_highlights(prompt):
     load_dotenv()
     
-    if video is None:
-        return None, "Please upload or specify a video to process."
-        
-    # gradio passes a local file path string to `video` when uploaded.
-    video_path = video
+    video_path = os.getenv("DEFAULT_TEST_VIDEO_PATH", "sample_video.mp4")
 
     if not os.path.exists(video_path):
         return None, f"Error: Could not find video file at {video_path}"
@@ -47,11 +43,10 @@ def generate_highlights(video, prompt):
 
 with gr.Blocks(title="AI Video Highlight Editor") as app:
     gr.Markdown("# AI Video Highlight Editor")
-    gr.Markdown("Upload a video and enter a prompt to automatically extract and stitch the most relevant segments.")
+    gr.Markdown("Enter a prompt to automatically extract and stitch the most relevant segments from the default video.")
     
     with gr.Row():
         with gr.Column():
-            video_input = gr.Video(label="Input Video")
             prompt_input = gr.Textbox(
                 label="Prompt", 
                 placeholder="Show me all the blocks and rejections.", 
@@ -65,7 +60,7 @@ with gr.Blocks(title="AI Video Highlight Editor") as app:
             
     submit_btn.click(
         fn=generate_highlights,
-        inputs=[video_input, prompt_input],
+        inputs=[prompt_input],
         outputs=[video_output, status_output]
     )
 

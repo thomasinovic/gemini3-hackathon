@@ -13,7 +13,10 @@ Use Cases:
 
 import os
 import subprocess
-DEFAULT_VIDEO = "input_video/NBA_20240617_DAL_BOS_1080p60_ABC_mkv.mp4"
+from dotenv import load_dotenv
+
+load_dotenv()
+DEFAULT_VIDEO = os.getenv("DEFAULT_TEST_VIDEO_PATH", "input_video/NBA_20240617_DAL_BOS_1080p60_ABC_mkv.mp4")
 
 def create_highlight_reel(
     input_video: str,
@@ -54,11 +57,10 @@ def create_highlight_reel(
             end_time = ts["end"] + post_roll_seconds
             duration = end_time - start_time
             
-            print(f"Extracting {clip_name} ({start_time}s to {end_time}s)...")
             subprocess.run([
                 "ffmpeg", "-y", "-ss", str(start_time), "-t", str(duration), 
                 "-i", input_video, "-c", "copy", clip_name
-            ])
+            ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             
             f.write(f"file '{os.path.abspath(clip_name).replace(chr(92), '/')}'\n")
 
