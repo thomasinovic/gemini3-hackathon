@@ -1,3 +1,4 @@
+import json
 import os
 from dotenv import load_dotenv
 from transcribe_voxtral import transcribe_video
@@ -8,6 +9,10 @@ def main():
     load_dotenv()
     
     video_path = os.getenv("DEFAULT_TEST_VIDEO_PATH", "sample_video.mp4")
+    playbyplay_path = os.getenv(
+        "PLAYBYPLAY_TRANSCRIPT_PATH",
+        "data_nba/playbyplay_0042300405_transcript.json",
+    )
     
     if not os.path.exists(video_path):
         print(f"Error: Could not find video file at {video_path}")
@@ -19,6 +24,11 @@ def main():
     if not transcript:
         print("No audio detected or transcription failed. Exiting.")
         return
+
+    playbyplay_segments = None
+    if os.path.exists(playbyplay_path):
+        with open(playbyplay_path, "r", encoding="utf-8") as handle:
+            playbyplay_segments = json.load(handle)
 
     print("\n=== Step 2: Analyzing LLM Prompt ===")
     
@@ -33,7 +43,12 @@ def main():
     user_prompt = sample_prompts[1]
     print(f"User Prompt: '{user_prompt}'")
     
-    highlights = get_highlight_timestamps(transcript, user_prompt, dry_run=False)
+    highlights = get_highlight_timestamps(
+        transcript,
+        user_prompt,
+        playbyplay_segments=playbyplay_segments,
+        dry_run=False,
+    )
     
     if not highlights:
         print("No matching highlights found by the LLM. Exiting.")

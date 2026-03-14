@@ -9,4 +9,5 @@ dependencies = [
     "google-genai>=1.67.0",
     "gradio>=6.9.0",
     "mistralai>=2.0.2",
+    "nba_api>=1.5.1",
 ]
