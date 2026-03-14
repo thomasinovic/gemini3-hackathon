@@ -81,7 +81,8 @@ def transcribe_video(video_path: str, api_key: str = None) -> list:
         
     transcript_data = [
         {
-            "start": segment.start, 
+            "start": segment.start,
+            "end": segment.end,
             "text": segment.text, 
         } 
         for segment in transcription_response.segments
@@ -98,4 +99,4 @@ if __name__ == "__main__":
     test_video = os.getenv("DEFAULT_TEST_VIDEO_PATH", "sample_video.mp4")
     mock_transcript = transcribe_video(test_video)
     for segment in mock_transcript:
-        print(f"[{segment['start']}s]: {segment['text']}")
+        print(f"[{segment['start']}s - {segment['end']}s]: {segment['text']}")
