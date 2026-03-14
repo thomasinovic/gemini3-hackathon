@@ -11,20 +11,110 @@ Use Cases:
 """
 
 import json
+from typing import Any
+
+try:
+    from google import genai
+    from google.genai import types
+except ImportError:
+    genai = None
+    types = None
 try:
     import config
 except ImportError:
     class config:
-        MISTRAL_API_KEY = "demo"
-        LLM_MODEL_NAME = "mistral-large-latest"
+        GEMINI_API_KEY = "demo"
+        GEMINI_MODEL_NAME = "gemini-2.5-flash"
 
-def get_highlight_timestamps(transcript: list, user_prompt: str, dry_run: bool = False) -> list:
+
+def _normalize_transcript(transcript: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    normalized = []
+    for index, segment in enumerate(transcript):
+        text = segment.get("text") or segment.get("sentence") or ""
+        if text is None:
+            text = ""
+        start = segment.get("start")
+        end = segment.get("end")
+        duration = segment.get("duration")
+
+        if start is None:
+            continue
+        if end is None and duration is not None:
+            end = start + duration
+        if end is None:
+            next_segment = transcript[index + 1] if index + 1 < len(transcript) else None
+            next_start = next_segment.get("start") if isinstance(next_segment, dict) else None
+            if next_start is not None:
+                end = next_start
+        if end is None:
+            continue
+
+        normalized.append({
+            "text": str(text),
+            "start": float(start),
+            "end": float(end)
+        })
+
+    return normalized
+
+
+def _build_prompt(transcript: list[dict[str, Any]], user_prompt: str, stats_data: dict | None) -> str:
+    payload = {
+        "user_prompt": user_prompt,
+        "stats_data": stats_data or {},
+        "transcript_segments": transcript,
+        "output_schema": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "start": {"type": "number"},
+                    "end": {"type": "number"},
+                    "reason": {"type": "string"}
+                },
+                "required": ["start", "end"]
+            }
+        }
+    }
+
+    return (
+        "You are an NBA highlight extractor.\n"
+        "Given a user request, match it to transcript segments.\n"
+        "Return ONLY a valid JSON array that matches the output_schema.\n"
+        "Use exact timestamps from transcript_segments; if you need a span, use the earliest matching start and latest matching end.\n"
+        "Do not include any extra text outside JSON.\n\n"
+        f"INPUT_JSON:\n{json.dumps(payload, ensure_ascii=False)}"
+    )
+
+
+def _parse_gemini_response(raw_text: str) -> list[dict[str, Any]]:
+    data = json.loads(raw_text)
+    if not isinstance(data, list):
+        return []
+    results = []
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        start = item.get("start")
+        end = item.get("end")
+        if start is None or end is None:
+            continue
+        results.append({"start": float(start), "end": float(end)})
+    return results
+
+def get_highlight_timestamps(
+    transcript: list,
+    user_prompt: str,
+    stats_data: dict | None = None,
+    dry_run: bool = False
+) -> list:
     """
     Analyzes the transcript according to the user prompt to find matching highlight timestamps.
     
     Args:
-        transcript (list): List of dictionaries containing 'text', 'start', and 'duration'.
+        transcript (list): List of dictionaries containing 'text', 'start', and 'duration' or 'end'.
         user_prompt (str): The natural language request from the user.
+        stats_data (dict | None): Optional structured stats to help disambiguate players/events.
         dry_run (bool): If True, returns mock timestamps without calling the LLM.
         
     Returns:
@@ -37,21 +127,38 @@ def get_highlight_timestamps(transcript: list, user_prompt: str, dry_run: bool =
             {"start": 45.0, "end": 52.5}
         ]
     
-    print("Sending transcript and prompt to LLM for analysis...")
-    # Placeholder for actual LLM API call (e.g., Mistral Chat API)
-    # The prompt would instruct the LLM to return a JSON array of start/end times.
-    # response = client.chat.complete(model=config.LLM_MODEL_NAME, messages=[...])
-    # return json.loads(response.choices[0].message.content)
-    
-    return []
+    if genai is None or types is None:
+        raise ImportError(
+            "Missing google-genai package. Install with: pip install google-genai"
+        )
+
+    if not getattr(config, "GEMINI_API_KEY", None):
+        raise ValueError("GEMINI_API_KEY is not set in config.py")
+
+    normalized_transcript = _normalize_transcript(transcript)
+    if not normalized_transcript:
+        return []
+
+    prompt = _build_prompt(normalized_transcript, user_prompt, stats_data)
+    client = genai.Client(api_key=config.GEMINI_API_KEY)
+
+    response = client.models.generate_content(
+        model=config.GEMINI_MODEL_NAME,
+        contents=prompt,
+        config=types.GenerateContentConfig(
+            temperature=0.2,
+            response_mime_type="application/json"
+        )
+    )
+
+    return _parse_gemini_response(response.text)
 
 if __name__ == "__main__":
     print("Testing Prompt Analysis Engine...")
-    mock_transcript = [
-        {"text": "Curry pulls up for three...", "start": 10.5, "duration": 2.0},
-        {"text": "Bang! He hits it!", "start": 12.5, "duration": 2.5}
-    ]
-    prompt = "Show me three pointers."
-    
-    results = get_highlight_timestamps(mock_transcript, prompt, dry_run=True)
-    print("LLM identified timestamps:", results)
+    with open("sample_video_2_transcript.json", "r", encoding="utf-8") as handle:
+        transcript = json.load(handle)
+
+    prompt = "Show me the blocks in this clip."
+    results = get_highlight_timestamps(transcript, prompt, dry_run=False)
+    print("LLM identified timestamps:")
+    print(json.dumps(results, indent=2))
