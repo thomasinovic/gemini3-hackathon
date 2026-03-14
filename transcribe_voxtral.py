@@ -13,9 +13,10 @@ Use Cases:
 import config
 import os
 import subprocess
-from mistralai import Mistral
+from mistralai.client import Mistral
 
-def transcribe_video(video_path: str, api_key: str = config.MISTRAL_API_KEY, dry_run: bool = False) -> list:
+
+def transcribe_video(video_path: str, api_key: str = config.MISTRAL_API_KEY) -> list:
     """
     Transcribes a video file using the Mistral API.
     
@@ -25,24 +26,25 @@ def transcribe_video(video_path: str, api_key: str = config.MISTRAL_API_KEY, dry
         dry_run (bool): If True, returns a mock transcript. Default is False.
         
     Returns:
-        list: A list of dictionaries containing 'text', 'start', and 'duration'.
+        list: A list of dictionaries containing 'text', 'start', and 'transcript'.
     """
-    if dry_run:
-        print(f"[TEST MODE] Simulating Mistral API transcription for: {video_path}")
-        return [
-            {"text": "Stephen Curry with the ball.", "start": 0.0, "duration": 2.5},
-            {"text": "He shoots from downtown... BANG!", "start": 2.5, "duration": 3.0}
-        ]
         
     print(f"Extracting audio from {video_path}...")
     audio_path = "temp_audio.mp3"
     
     # Extract audio using ffmpeg
-    subprocess.run(
-        ["ffmpeg", "-y", "-i", video_path, "-q:a", "0", "-map", "a", audio_path], 
-        stdout=subprocess.DEVNULL, 
-        stderr=subprocess.DEVNULL
-    )
+    try:
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", video_path, "-q:a", "0", "-map", "a", audio_path], 
+            stdout=subprocess.DEVNULL, 
+            stderr=subprocess.DEVNULL,
+            check=True
+        )
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"FFmpeg failed to extract audio from {video_path}. Ensure the file exists and has an audio stream.") from e
+        
+    if not os.path.exists(audio_path):
+        raise FileNotFoundError(f"Failed to create {audio_path}. Check if ffmpeg is installed and working correctly.")
     
     print(f"Sending {audio_path} to Mistral API...")
     client = Mistral(api_key=api_key)
@@ -50,25 +52,26 @@ def transcribe_video(video_path: str, api_key: str = config.MISTRAL_API_KEY, dry
     with open(audio_path, "rb") as audio_file:
         response = client.audio.transcriptions.create(
             file=audio_file, 
-            model="voxtral-v1" # Use intended Mistral audio model
+            model="voxtral-v1",
+            language="en",
+            timestamps=True
         )
         
     # Clean up temporary audio file
     if os.path.exists(audio_path):
         os.remove(audio_path)
     
-    # Map API response to expected [{text, start, duration}] structure
     return [
         {
             "text": segment.text, 
             "start": segment.start, 
-            "duration": segment.end - segment.start
+            "transcript": segment.text,
         } 
         for segment in response.segments
     ]
 
 if __name__ == "__main__":
     print("Testing Mistral transcription script...")
-    mock_transcript = transcribe_video(config.DEFAULT_TEST_VIDEO_PATH, dry_run=True)
+    mock_transcript = transcribe_video(config.DEFAULT_TEST_VIDEO_PATH)
     for segment in mock_transcript:
-        print(f"[{segment['start']}s - {segment['start']+segment['duration']}s]: {segment['text']}")
+        print(f"[{segment['start']}s]: {segment['text']}")
