@@ -157,6 +157,16 @@ with gr.Blocks(title="AI Video Highlight Editor") as app:
                 placeholder="Show me all the blocks and rejections.", 
                 lines=2
             )
+            video_path_input = gr.Textbox(
+                label="Video Path",
+                placeholder="Path to your video file.",
+                lines=1
+            )
+            voice_prompt_input = gr.Audio(
+                label="Voice Prompt (Overrides Text Prompt)",
+                type="filepath",
+                sources=["microphone", "upload"]
+            )
             submit_btn = gr.Button("Generate Highlights", variant="primary")
             
         with gr.Column():
@@ -176,4 +186,4 @@ with gr.Blocks(title="AI Video Highlight Editor") as app:
     )
 
 if __name__ == "__main__":
-    app.launch(server_name="127.0.0.1", server_port=7860, share=False)
+    app.launch(server_name="localhost", server_port=7860, share=True)
