@@ -15,7 +15,14 @@ import os
 import subprocess
 DEFAULT_VIDEO = "input_video/NBA_20240617_DAL_BOS_1080p60_ABC_mkv.mp4"
 
-def create_highlight_reel(input_video: str, timestamps: list, output_video: str = "output/highlights.mp4", dry_run: bool = False):
+def create_highlight_reel(
+    input_video: str,
+    timestamps: list,
+    output_video: str = "output/highlights.mp4",
+    dry_run: bool = False,
+    pre_roll_seconds: float = 2.0,
+    post_roll_seconds: float = 1.0,
+):
     """
     Clips specific segments from an input video and concatenates them into a new file.
     
@@ -32,7 +39,9 @@ def create_highlight_reel(input_video: str, timestamps: list, output_video: str 
     if dry_run:
         print(f"[TEST MODE] Simulating video edit for {input_video}")
         for idx, ts in enumerate(timestamps):
-            print(f"  -> Would cut clip {idx}: {ts['start']}s to {ts['end']}s")
+            adjusted_start = max(0.0, ts["start"] - pre_roll_seconds)
+            adjusted_end = ts["end"] + post_roll_seconds
+            print(f"  -> Would cut clip {idx}: {adjusted_start}s to {adjusted_end}s")
         print(f"  -> Would concatenate into {output_video}")
         return
 
@@ -41,10 +50,11 @@ def create_highlight_reel(input_video: str, timestamps: list, output_video: str 
     with open(list_file, "w") as f:
         for idx, ts in enumerate(timestamps):
             clip_name = f"temp_clip_{idx}.mp4"
-            start_time = ts["start"]
-            duration = ts["end"] - ts["start"]
+            start_time = max(0.0, ts["start"] - pre_roll_seconds)
+            end_time = ts["end"] + post_roll_seconds
+            duration = end_time - start_time
             
-            print(f"Extracting {clip_name} ({start_time}s to {ts['end']}s)...")
+            print(f"Extracting {clip_name} ({start_time}s to {end_time}s)...")
             subprocess.run([
                 "ffmpeg", "-y", "-ss", str(start_time), "-t", str(duration), 
                 "-i", input_video, "-c", "copy", clip_name
