@@ -10,12 +10,15 @@ Use Cases:
 2. Direct API Integration: Offload heavy ML compute to Mistral's remote endpoints.
 """
 
-import config
 import os
 import subprocess
-from mistralai import Mistral
+import json
+from dotenv import load_dotenv
+from mistralai.client import Mistral
 
-def transcribe_video(video_path: str, api_key: str = config.MISTRAL_API_KEY, dry_run: bool = False) -> list:
+load_dotenv()
+
+def transcribe_video(video_path: str, api_key: str = None) -> list:
     """
     Transcribes a video file using the Mistral API.
     
@@ -25,50 +28,71 @@ def transcribe_video(video_path: str, api_key: str = config.MISTRAL_API_KEY, dry
         dry_run (bool): If True, returns a mock transcript. Default is False.
         
     Returns:
-        list: A list of dictionaries containing 'text', 'start', and 'duration'.
+        list: A list of dictionaries containing 'text', 'start', and 'transcript'.
     """
-    if dry_run:
-        print(f"[TEST MODE] Simulating Mistral API transcription for: {video_path}")
-        return [
-            {"text": "Stephen Curry with the ball.", "start": 0.0, "duration": 2.5},
-            {"text": "He shoots from downtown... BANG!", "start": 2.5, "duration": 3.0}
-        ]
-        
-    print(f"Extracting audio from {video_path}...")
-    audio_path = "temp_audio.mp3"
     
-    # Extract audio using ffmpeg
-    subprocess.run(
-        ["ffmpeg", "-y", "-i", video_path, "-q:a", "0", "-map", "a", audio_path], 
-        stdout=subprocess.DEVNULL, 
-        stderr=subprocess.DEVNULL
-    )
+    if api_key is None:
+        api_key = os.getenv("MISTRAL_API_KEY")
+        
+    base_name = os.path.splitext(video_path)[0]
+    json_path = f"{base_name}_transcript.json"
+    audio_path = f"{base_name}_audio.mp3"
+    
+    if os.path.exists(json_path):
+        print(f"Transcript already exists at {json_path}. Loading...")
+        with open(json_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+        
+    if not os.path.exists(audio_path):
+        print(f"Extracting audio from {video_path}...")
+        
+        # Extract audio using ffmpeg
+        try:
+            subprocess.run(
+                ["ffmpeg", "-y", "-i", video_path, "-q:a", "0", "-map", "a", audio_path], 
+                stdout=subprocess.DEVNULL, 
+                stderr=subprocess.DEVNULL,
+                check=True
+            )
+        except subprocess.CalledProcessError as e:
+            raise RuntimeError(f"FFmpeg failed to extract audio from {video_path}. Ensure the file exists and has an audio stream.") from e
+            
+        if not os.path.exists(audio_path):
+            raise FileNotFoundError(f"Failed to create {audio_path}. Check if ffmpeg is installed and working correctly.")
+    else:
+        print(f"Audio already extracted at {audio_path}.")
     
     print(f"Sending {audio_path} to Mistral API...")
     client = Mistral(api_key=api_key)
+    model = "voxtral-mini-latest"
     
     with open(audio_path, "rb") as audio_file:
-        response = client.audio.transcriptions.create(
-            file=audio_file, 
-            model="voxtral-v1" # Use intended Mistral audio model
+        transcription_response = client.audio.transcriptions.complete(
+            model=model,
+            file={
+                "file_name": os.path.basename(audio_path),
+                "content": audio_file
+            },
+            timestamp_granularities=["segment"] # or "word"
         )
         
-    # Clean up temporary audio file
-    if os.path.exists(audio_path):
-        os.remove(audio_path)
-    
-    # Map API response to expected [{text, start, duration}] structure
-    return [
+    transcript_data = [
         {
-            "text": segment.text, 
             "start": segment.start, 
-            "duration": segment.end - segment.start
+            "text": segment.text, 
         } 
-        for segment in response.segments
+        for segment in transcription_response.segments
     ]
+    
+    with open(json_path, "w", encoding="utf-8") as f:
+        json.dump(transcript_data, f, indent=4)
+        print(f"Saved transcript to {json_path}")
+    
+    return transcript_data
 
 if __name__ == "__main__":
     print("Testing Mistral transcription script...")
-    mock_transcript = transcribe_video(config.DEFAULT_TEST_VIDEO_PATH, dry_run=True)
+    test_video = os.getenv("DEFAULT_TEST_VIDEO_PATH", "sample_video.mp4")
+    mock_transcript = transcribe_video(test_video)
     for segment in mock_transcript:
-        print(f"[{segment['start']}s - {segment['start']+segment['duration']}s]: {segment['text']}")
+        print(f"[{segment['start']}s]: {segment['text']}")

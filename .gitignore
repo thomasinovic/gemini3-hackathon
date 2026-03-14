@@ -10,3 +10,4 @@ wheels/
 .venv
 input_video/*
 output/*
+.env
