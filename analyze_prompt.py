@@ -55,11 +55,17 @@ def _normalize_transcript(transcript: list[dict[str, Any]]) -> list[dict[str, An
     return normalized
 
 
-def _build_prompt(transcript: list[dict[str, Any]], user_prompt: str, stats_data: dict | None) -> str:
+def _build_prompt(
+    transcript: list[dict[str, Any]],
+    user_prompt: str,
+    stats_data: dict | None,
+    playbyplay_segments: list[dict[str, Any]] | None,
+) -> str:
     payload = {
         "user_prompt": user_prompt,
         "stats_data": stats_data or {},
         "transcript_segments": transcript,
+        "playbyplay_segments": playbyplay_segments or [],
         "output_schema": {
             "type": "array",
             "items": {
@@ -77,6 +83,11 @@ def _build_prompt(transcript: list[dict[str, Any]], user_prompt: str, stats_data
     return (
         "You are an NBA highlight extractor.\n"
         "Given a user request, match it to transcript segments.\n"
+        "Ignore segments that are ads, sponsorships, promos, or commercial breaks.\n"
+        "Also ignore segments before the game starts and after the game ends.\n"
+        "Use playbyplay_segments ONLY as supporting context to confirm events.\n"
+        "When selecting timestamps, ALWAYS choose start/end from transcript_segments (audio commentary timeline).\n"
+        "If playbyplay_segments and audio commentary conflict, trust the audio commentary timing.\n"
         "Return ONLY a valid JSON array that matches the output_schema.\n"
         "Use exact timestamps from transcript_segments; if you need a span, use the earliest matching start and latest matching end.\n"
         "Do not include any extra text outside JSON.\n\n"
@@ -103,6 +114,8 @@ def get_highlight_timestamps(
     transcript: list,
     user_prompt: str,
     stats_data: dict | None = None,
+    playbyplay_segments: list | None = None,
+    debug: bool = False,
     dry_run: bool = False
 ) -> list:
     """
@@ -112,11 +125,31 @@ def get_highlight_timestamps(
         transcript (list): List of dictionaries containing 'text', 'start', and 'duration' or 'end'.
         user_prompt (str): The natural language request from the user.
         stats_data (dict | None): Optional structured stats to help disambiguate players/events.
+        playbyplay_segments (list | None): Optional play-by-play transcript segments.
+        debug (bool): If True, prints counts and dumps prompt/response to assets.
         dry_run (bool): If True, returns mock timestamps without calling the LLM.
         
     Returns:
         list: A list of dictionaries containing 'start' and 'end' keys in seconds.
     """
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise ValueError("GEMINI_API_KEY is not set in .env")
+
+    model_name = os.getenv("GEMINI_MODEL_NAME", "gemini-2.5-flash")
+
+    normalized_transcript = _normalize_transcript(transcript)
+    if not normalized_transcript:
+        return []
+
+    prompt = _build_prompt(normalized_transcript, user_prompt, stats_data, playbyplay_segments)
+    if debug:
+        os.makedirs("assets", exist_ok=True)
+        print(f"Audio segments: {len(normalized_transcript)}")
+        print(f"Play-by-play segments: {len(playbyplay_segments or [])}")
+        with open("assets/last_gemini_prompt.txt", "w", encoding="utf-8") as handle:
+            handle.write(prompt)
+
     if dry_run:
         print(f"[TEST MODE] Simulating LLM analysis for prompt: '{user_prompt}'")
         return [
@@ -128,18 +161,6 @@ def get_highlight_timestamps(
         raise ImportError(
             "Missing google-genai package. Install with: pip install google-genai"
         )
-
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        raise ValueError("GEMINI_API_KEY is not set in .env")
-
-    model_name = os.getenv("GEMINI_MODEL_NAME", "gemini-2.5-flash")
-
-    normalized_transcript = _normalize_transcript(transcript)
-    if not normalized_transcript:
-        return []
-
-    prompt = _build_prompt(normalized_transcript, user_prompt, stats_data)
     client = genai.Client(api_key=api_key)
 
     response = client.models.generate_content(
@@ -150,6 +171,10 @@ def get_highlight_timestamps(
             response_mime_type="application/json"
         )
     )
+
+    if debug:
+        with open("assets/last_gemini_response.json", "w", encoding="utf-8") as handle:
+            handle.write(response.text or "")
 
     return _parse_gemini_response(response.text)
 
